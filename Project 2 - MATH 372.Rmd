@@ -1,0 +1,421 @@
+---
+title: "Project 2 - MATH 372"
+author: "Hadley Dixon"
+date: "2023-11-06"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Data Description
+
+*The data “diabetes.txt” contains 16 variables on 366 subjects who were interviewed in a study to understand the prevalence of obesity, diabetes, and other cardiovascular risk factors in central Virginia for African Americans. We will consider building regression models with glyhb as the response variable, as Glycosolated Hemoglobin levels greater than 70 is often taken as a positive diagnosis of diabetes. The goal is to find the “best” model for explaining the factors which are predictive of diabetes diagnosis.*
+
+## Data Analysis
+
+```{r}
+library(ggplot2, quietly = TRUE)
+library(dplyr, quietly = TRUE)
+library(tidyverse, quietly = TRUE)
+library(Hmisc, quietly = TRUE)
+library(GGally, quietly = TRUE)
+library(MASS, quietly = TRUE)
+library(leaps, quietly = TRUE)
+library(glmnet, quietly = TRUE)
+library(MPV, quietly = TRUE)
+library(olsrr, quietly = TRUE)
+
+diabetes <- read.table(file = "diabetes.txt", header = TRUE)
+```
+
+### Data exploration and data splitting
+
+**1. Among all the variables, which are quantitative variables? Which are qualitative variables? Draw histogram for each quantitative variable and comment on its distribution. Draw pie chart for each qualitative variable and comment on how its classes are distributed. Draw scatter plot matrix and obtain the pairwise correlation matrix for all quantitative variables in the data. Comment on their relationships.**
+
+The quantitative variables are as follows: chol, stab.glu, hdl, ratio, glyhb (response), age, height, weight, bp.1s, bp.1d, waist, hip, and time.ppn.\
+The qualitative variables are as follows: location, gender, and frame.\
+
+```{r}
+# Numeric columns excluding response variable
+quant <-diabetes[, sapply(diabetes, is.numeric)] 
+hist(quant[0:4])
+hist(quant[5:8])
+hist(quant[9:13])
+```
+
+Histogram of chol: Follows a Normal distribution with a slight right skew.\
+Histogram of stab.glu: Follows a Normal distribution with under dispersion, meaning that the data is heavily concentrated at 0 and has light tails. Also, the data is has a strong right skew.\
+Histogram of hdl: Follows a Normal distribution with a moderate right skew.\
+Histogram of ratio: Follows a Normal distribution with a string right skew.\
+Histogram of glyhb: Follows a Normal distribution with under dispersion, meaning that the data is heavily concentrated at 0 and has light tails. Also, the data is has a strong right skew.\
+Histogram of  age: Follows a Uniform distribution.\
+Histogram of  height: Follows a Normal distribution with over dispersion and heavy tails. Also the data has a slight left skew.\
+Histogram of  weight: Follows a Normal distribution with over dispersion and heavy tails. Also the data has a slight right skew.\
+Histogram of  bp.1s: Follows a Normal distribution with a moderate right skew.\
+Histogram of  bp.1d: Follows a Normal distribution with slight over dispersion.\
+Histogram of  waist: Follows a Normal distribution with over dispersion and heavy tails. Also the data has a slight right skew.\
+Histogram of  hip: Follows a Normal distribution with a slight right skew.\
+Histogram of  time.ppn: Follows a Chi-squared distribution.\
+
+```{r}
+# Pie chart for each qualitative variable
+qual <-diabetes[, sapply(diabetes, negate(is.numeric))]
+
+par(mfrow = c(1, ncol(qual)))
+
+for (col in names(qual)) {
+  temp <- data.frame(table(qual[[col]]))
+  names(temp) <- c("label", "value")
+  pie(temp$value, labels = temp$label)
+  title(paste0("Pie Chart for ", col))
+}
+
+par(mfrow = c(1, 1))
+```
+
+Pie chart of location: There is approximately a 50/05 split between Louise and Buckingham.\
+Pie chart of gender: There is approximately a 60/40 split between female and male, respectively.\
+Pie chart of frame: There is approximately a 50/25/25 split between medium, large, and small, respectively.\
+
+```{r}
+# Scatter/Correlation matrix of variables
+ggpairs(quant, progress = FALSE, lower = list(continuous = wrap('points', size = 0.02)), upper = list(continuous = wrap('cor', size = 2))) + theme(axis.line=element_blank(), axis.text=element_blank(), axis.ticks=element_blank(), strip.text.x = element_text(size = 5), strip.text.y = element_text(size = 5)) 
+```
+
+Important correlations:\
+Variables: chol & ratio --> moderate positive correlation
+Variables: stab.gl & glyhb (response) --> strong positive correlation\
+Variables: hdl & ratio --> moderate negative correlation\
+Variables:  --> moderate positive correlation\
+Variables: weight & waist --> strong positive correlation\
+Variables: bp.1s & bp.1d --> moderate positive correlation\
+Variables: waist & hip --> strong positive correlation\
+
+**2. Regress glybh on all predictor variables (Model 1). Draw the diagnostic plots of the model and comment.**
+
+```{r}
+model1 <- lm(diabetes$glyhb ~ diabetes$chol + diabetes$stab.glu + diabetes$hdl + diabetes$ratio + diabetes$location + diabetes$age + diabetes$gender + diabetes$height + diabetes$weight + diabetes$frame + diabetes$bp.1s + diabetes$bp.1d + diabetes$waist + diabetes$hip + diabetes$time.ppn, data = diabetes)
+
+# Diagnostic Tests
+model1_residuals <- rstandard(model1)
+diabetes$model1Residuals = model1_residuals
+print("This is the residual plot")
+ggplot(diabetes, aes(x=c(1:366), y=model1Residuals)) + geom_point() + geom_smooth(method=lm , color="blue", se=FALSE) 
+print("This is the histogram of the standardized residuals")
+hist(model1_residuals)
+print("This is the QQ plot of the standardized residuals")
+qqnorm(diabetes$model1Residuals, pch = 1, frame = FALSE)
+qqline(diabetes$model1Residuals , col = "green")
+```
+
+From our diagnostic plots, we are able to tell the following: The equal variance assumption does not hold as we see slight heteroscedasticity of the residuals, despite centering around y = 0. The distribution of the residuals is Normally distributed but highly under dispersed. Similarly, we see light tails relative to the standard normal distribution in the QQ plot. I would not be very comfortable performing inference. 
+
+**3. You want to check whether any transformation on the response variable is needed. You use the function ‘boxcox’ to help you make the decision. State the transformation you decide to use. In the following, we denote the transformed response variable to be $\tilde{glyhb}$. Regress $\tilde{glyhb}$ on all predictor variables (Model 2). Draw the diagnostic plots of this model and comment. Apply boxcox again on Model 2; what do you find?** 
+
+```{r}
+# Transform Y
+BC <- boxcox(model1, plotit = FALSE)
+lambda <- BC$x[which.max(BC$y)]
+Ytrans <- 1/diabetes$glyhb
+transformed.data <- data.frame(YT = Ytrans, chol = diabetes$chol, stab.glu= diabetes$stab.glu, hdl= diabetes$hdl, ratio= diabetes$ratio, location=diabetes$location, age= diabetes$age, gender= diabetes$gender, height=diabetes$height, weight= diabetes$weight, frame= diabetes$frame, bp.1s=diabetes$bp.1s, bp.1d=diabetes$bp.1d, waist=diabetes$waist, hip=diabetes$hip, time.ppn=diabetes$time.ppn)
+```
+
+Using boxcox, the lambda value I found was -0.9. In general, boxcox maximizes the log-likelihood function and allows us to transform Y in a way which addresses the variance issues of our original data. However this lambda value makes our transformation hard to interpret value, so instead I performed the following transformation: $Y_{T} = 1/Y$.\
+
+
+```{r}
+# Regress new Y on all predictor variables
+model2 <- lm(YT ~ transformed.data$chol + transformed.data$stab.glu + transformed.data$hdl + transformed.data$ratio + transformed.data$location + transformed.data$age + transformed.data$gender + transformed.data$height + transformed.data$weight + transformed.data$frame + transformed.data$bp.1s + transformed.data$bp.1d + transformed.data$waist + transformed.data$hip + transformed.data$time.ppn, data = transformed.data)
+
+# Diagnostic Tests
+model2_residuals <- rstandard(model2)
+
+print("This is the transformed residual plot")
+ggplot(transformed.data, aes(x=c(1:366), y=model2_residuals)) + geom_point() + geom_smooth(method=lm , color="blue", se=FALSE) 
+print("This is the histogram of the transformed standardized residuals")
+hist(model2_residuals)
+print("This is the QQ plot of the transformed standardized residuals")
+qqnorm(model2_residuals, pch = 1, frame = FALSE)
+qqline(model2_residuals, col = "green")
+```
+
+```{r}
+# Transform Y using boxcox, AGAIN
+BC2 <- boxcox(model2,plotit = FALSE)
+lambda2 <- BC2$x[which.max(BC2$y)]
+```
+
+When I ran boxcox again, the lambda value chosen was $\lambda_2 = 0.9$. If I were to use this value and apply it to the transformation $Y_{T} = (Y^{\lambda_2} - 1)/lambda_2$, it would not have significant impact on our data, and therefore not be a useful transformation in terms of addressing our diagnostic tests.
+
+**4. Set the seed to “372” and randomly split data into two parts: a training data set (70%) and a validation data set (30%).**
+
+````{r}
+set.seed(372)
+train <- slice_sample(.data = transformed.data, prop = .7)
+validate <- anti_join(transformed.data, train)
+```
+
+### Selection of first-order effects
+
+*We now consider subsets selection from the pool of all first-order effects of the 15 predictors. $\tilde{glyhb}$ is used as the response variable for the following problems.*
+
+**5. Fit a model with all first-order effects (Model 3). How many regression coefficients are there in this model? What is the MSE from Model 3?**
+
+There are 16 regression coefficients in model 3. The MSE of model 3 is 0.001411762
+
+```{r}
+model3 <- lm(YT ~ ., data = train)
+MSEmodel3 <- mean(summary(model3)$residuals^2)
+summary(model3)
+```
+
+**6. Consider best subsets selection using the R function regsubsets() from the leaps library with Model 3 as the full model. Return the top 1 best subset of all subset sizes (i.e., number of X variables) up to 16 (because frame has 3 levels). Compute $SSE_p$ , ${R_p}^2$, ${R_{a,p}}^2$, $C_p$, ${AIC}_p$, and ${BIC}_p$ for each of models, as well as the intercept-only model. Identify the best model according to each criterion. For the best model according to $C_p$, what do you observe about its $C_p$ value? Do you have a possible explanation for it?**
+
+See output for criteria calculations. 
+```{r}
+# Intercept only model
+intercept_only <- lm(YT ~ 1, data = train)
+SSEp_intercept <- sum(intercept_only$residuals^2) # 0.6937511
+R2_intercept <- summary(intercept_only)$r.squared # 0
+R2adj_intercept <- summary(intercept_only)$adj.r.squared # 0
+Cp_intercept <- ols_mallows_cp(intercept_only, model3) # 204.7754
+AIC_intercept <- 256*log(SSEp_intercept) + 2*(1) # -91.60435
+BIC_intercept <- 256*log(SSEp_intercept) + (1)*log(256) # -88.05917
+```
+
+
+```{r}
+all.models <- regsubsets(YT ~ train$chol + train$stab.glu + train$hdl + train$ratio + train$location + train$age + train$gender + train$height + train$weight + train$frame + train$bp.1s + train$bp.1d + train$waist + train$hip + train$time.ppn, data = train, nbest=1, nvmax=16)
+summary_stuff <- summary(all.models)
+names_of_data <- c("YT",colnames(summary_stuff$which)[-1])
+n <- nrow(train)
+K <- nrow(summary_stuff$which)
+nicer <- lapply(1:K,function(i){
+  model <- paste(names_of_data[summary_stuff$which[i,]],collapse = ",")
+  R2 <- summary_stuff$rsq[i]
+  R2adj <- summary_stuff$adjr2[i]
+  p <- sum(summary_stuff$which[i,])
+  SSE <- summary_stuff$rss[i]
+  BIC <- summary_stuff$bic[i]
+  AIC <- summary_stuff$bic[i] - (log(n)* p) + 2*p
+  CP <- summary_stuff$cp[i]
+  results <- data.frame(model,p,CP,AIC, BIC, R2, R2adj, SSE)
+  return(results)
+})
+nicer <- Reduce(rbind,nicer)
+nicer
+```
+
+The best model according to each criterion is as follows:\
+$SSE_p$: YT ~ . (full model)\
+${R_p}^2$: YT ~ . (full model)\
+${R_{a,p}}^2$: YT ~ chol + stab.glu + hdl + age + gender{male} + height + waist + time.ppn\
+$C_p$: YT ~ chol + stab.glu + hdl + ratio + location{Louisa} + age, + gender{male} + height + weight + frame{medium} + bp.1s + bp.1d + waist + hip, + time.ppn\
+${AIC}_p$: YT ~ stab.glu + ratio + age + waist + time.ppn\
+${BIC}_p$: YT ~ stab.glu + age + waist\
+
+For the best model according to $C_p$, we notice that the best model is the full model. This is because in the full model, $C_p$ is always equal to p*(n-1) - 2, which simplifies to p, making p = $C_p$ always true. To account for this, we only look at the first 15 models when assessing $C_p$.
+
+```{r}
+which.min(nicer$SSE)
+which.max(nicer$R2)
+which.max(nicer$R2adj)
+which.min(abs(nicer[0:15,]$CP - nicer[0:15,]$p))
+which.min(nicer$AIC)
+which.min(nicer$BIC)
+```
+
+**7. Denote the best models according to $AIC$, $BIC$, and adjusted $R^2$ as Models 3.1, 3.2, and 3.3, respectively. It is possible that some of the three models are the same. We will examine these later on.**
+
+````{r}
+model3.1 <- lm(YT ~ train$stab.glu + train$ratio + train$age + train$waist + train$time.ppn, data = train) # AIC
+model3.2 <- lm(YT ~ train$stab.glu + train$age + train$waist, data = train) # BIC
+model3.3 <- lm(YT ~ train$chol + train$stab.glu + train$hdl + train$age + train$gender + train$height + train$waist + train$time.ppn, data = train) #R2adj
+```
+
+### Selection of first- and second-order effects
+
+*We now consider subset selection from the pool of first- and second- order effects as well as 2-way interactions between the 15 predictors.*
+
+**8. Fit a model with all first-order and 2-way interaction effects (Model 4). How many regression coefficients are there in this model? What is the MSE from this model? Do you have any concern about the fit of this model? If yes, why?**
+
+There are 136 coefficients in the model. The MSE of this model is 0.0006005911 The MSE is very low, but a small MSE does not necessarily guarantee a perfect model. In fact, our model might be over fitted. To test this, we will perform model validation.  
+
+```{r}
+model4 <- lm(YT ~ .^2, data = train)
+length(model4$coefficients)
+MSEmodel4 <- mean(summary(model4)$residuals^2)
+```
+
+**9. Apply ridge regression. Consider the penalty parameters λ = 0.01, 0.1, 1, 10, 100. Use cross validation to select the best value of λ. What is the model being selected with this λ value? Name this model Model 4.1.**
+
+After applying ridge regression and using cross validation, I found that $\lambda = 0.1$ to be the best value of $\lambda$. The model being selected with this $\lambda$ value is model 4.1 a full model with 136 predictors with adjusted beta values found in Coef.Ridge.
+
+```{r}
+lambda.vec <- c(0.01, 0.1, 1, 10, 100)
+x_ridge <- model.matrix(YT ~.^2, data = train)[,-1]
+y_ridge <- train$YT
+ridge.model <- glmnet(x_ridge, y_ridge, alpha = 0, lambda = lambda.vec)
+plot(ridge.model, xvar = "lambda")
+
+# Cross validation
+set.seed(372)
+cv.out.ridge <- cv.glmnet(x_ridge, y_ridge, alpha = 0, lambda = lambda.vec)
+
+#Find the best lambda value
+best.lambda.ridge <- cv.out.ridge$lambda.min
+best.lambda.ridge
+
+#Fit the final model to the entire data set using the chosen lambda
+model4.1 <- glmnet(x_ridge, y_ridge, alpha = 0, lambda = best.lambda.ridge)
+Coef.Ridge <- coef(model4.1)[1:136, ] # View beta values in full ridge model: Coef.Ridge[Coef.Ridge != 0]
+```
+
+**10. Apply LASSO regression. Consider the penalty parameters λ = 0.01, 0.1, 1, 10 100. Use cross validation to select the best value of λ. What is the model being selected with this λ value? Name this model Model 4.2.**
+
+After applying LASSO regression and using cross validation, I found that $\lambda = 0.01$ to be the best value of $\lambda$. The model being selected with this $\lambda$ value is model 4.2 such that $Y ~ 3.460e-01 + 1.399e-04(chol) + (-8.725e-04)(stab.glu) + (-6.913e-04)(age) + (-5.365e-04)(ratio) + (-1.480e-04)(bp.1s) + (-6.779e-04)(waist) + -1.996e-06(chol:stab.glu) + 8.569e-06(stab.glu:age)$\
+$+ (-3.103e-05)(age:ratio) + (-1.734e-05)(age:waist)$
+
+```{r}
+x_LASSO <- model.matrix(YT ~.^2, data = train)[,-1]
+y_LASSO <- train$YT
+LASSO.model <- glmnet(x_LASSO, y_LASSO, alpha = 1, lambda = lambda.vec)
+plot(LASSO.model, xvar <- "lambda")
+
+# Cross validation
+set.seed(372)
+cv.out.LASSO = cv.glmnet(x_LASSO, y_LASSO, alpha = 1, lambda = lambda.vec)
+
+#Find the best lambda value
+best.lambda.LASSO <- cv.out.LASSO$lambda.min
+best.lambda.LASSO
+
+#Fit the final model to the entire data set using the chosen lambda
+temp_LASSO <- glmnet(x_LASSO, y_LASSO, alpha = 1, lambda = best.lambda.LASSO)
+Coef.LASSO <- coef(temp_LASSO)[1:136, ]
+Coef.LASSO[Coef.LASSO != 0]
+
+model4.2 <- lm(YT ~ chol + stab.glu + age + ratio + bp.1s + waist + chol:stab.glu + stab.glu:age + stab.glu:bp.1s + stab.glu:waist + ratio:age + age:waist, data = train)
+summary(model4.2)
+```
+
+**11. Discuss the difference in methodologies behind ridge and LASSO regression. Why do they result in such different models?**
+
+Ridge regression asymptotically decreases the magnitude of beta coefficients as $\lambda$ increases, while LASSO regression snaps them to 0. This difference allows us to use LASSO regression in model selection and find a model without redundant/unnecessary predictors, because their coefficients have been snapped to 0. 
+
+### Model validation
+
+*We now consider validation of the models (Model 3.1, Model 3.2, Model 3.3, Models 4.1, Models 4.2) you selected in the previous studies.*
+
+**12. Internal validation. We use PRESS for this purpose. Calculate PRESS for each of these models. Comment.**
+
+PRESS of Model 3.1: 0.3944713\
+PRESS of Model 3.2: 0.4022217\
+PRESS of Model 3.3: 0.395689\
+PRESS of Models 4.1: 0.4092355\
+PRESS of Models 4.2: 0.4049749\
+
+PRESS gives us insight into the predictive power of the model on unseen data. A lower PRESS value indicates better predictive ability, such that the model is likely to perform well on new data, not just the data it was trained on. PRESS also addresses potential over fitting of a model, which was a problem when interpreting MSE earlier, because it is calculated using a 'leave-one-out' cross-validation approach.\
+
+From the values above, we can conclude that Model 3.1 has the greatest predictive power and is the best performing model out of the models above, in terms of predicting the left out observation. This also suggests that model ??? has the least prediction error on new or unseen data. 
+
+```{r}
+# Note: adapted from Cody's OH, my own implementation in a for loop below
+# PRESS function for ridge 
+PRESS_ridge_fucnt <- function(index) {
+  xtrain_exempt <- x_ridge[-index,]
+  ytrain_exempt <- y_ridge[-index]
+  xtest <- x_ridge[index, ]
+  ytest <- y_ridge[index]
+  
+  exempt_model <- glmnet(xtrain_exempt, ytrain_exempt, alpha = 0, lambda = best.lambda.ridge)
+  
+  exempt_predict <- predict(exempt_model, lambda = best.lambda.ridge, newx = xtest)
+  
+  error2 = (ytest - exempt_predict)^2
+  
+  return(error2)
+}
+```
+
+```{r}
+PRESSmodel3.1 <- PRESS(model3.1) # Model 3.1
+PRESSmodel3.2 <- PRESS(model3.2) # Model 3.2
+PRESSmodel3.3 <- PRESS(model3.3) # Model 3.3
+# Model 4.1
+PRESSmodel4.1 <- 0
+for (i in 1:nrow(train)) {
+  PRESSmodel4.1 = PRESSmodel4.1 + PRESS_ridge_fucnt(i)
+}
+PRESSmodel4.2 <- PRESS(model4.2) # Model 4.2 
+```
+
+**13. External validation using the validation set. For each of these models (Model 3.1, Model 3.2, Model 3.3, Model 4.1, Model 4.2), calculate the mean squared prediction error (MSPE), i.e., you use the model to predict the 110 observations in the validation set and calculate the averaged squared prediction error. How do these MSPEs compare with the respective PRESS/n (here n is the sample size of the training data, i.e., 256). Which model has the smallest MSPE?**
+
+MSPE of Model 3.1: 0.003498903\
+MSPE of Model 3.1 is greater than its respective PRESS/n where n = 256\
+MSPE of Model 3.2: 0.003478664\
+MSPE of Model 3.2 is greater than its respective PRESS/n where n = 256\
+MSPE of Model 3.3: 0.003516655\
+MSPE of Model 3.3 is greater than its respective PRESS/n where n = 256\
+
+##### WRONG ####
+MSPE of Model 4.1: 0.0009455666 \
+MSPE of Model 4.1 is ???? than than its respective PRESS/n where n = 256\
+MSPE of Model 4.2: 0.003565263 \
+MSPE of Model 4.2 is greater than its respective PRESS/n where n = 256\
+
+The model with the smallest MSPE is ????.\
+##### WRONG ####
+
+```{r}
+y_test <- validate$YT
+x_test <- model.matrix(YT ~.^2, data = validate)[,-1]
+
+# Model 3.1
+MSPEmodel3.1 <- mean((y_test - predict.lm(model3.1, validate)) ^ 2) 
+
+# Model 3.2
+MSPEmodel3.2 <- mean((y_test - predict.lm(model3.2, validate)) ^ 2) 
+
+# Model 3.3
+MSPEmodel3.3 <- mean((y_test - predict.lm(model3.3, validate)) ^ 2) 
+
+##### ERRORS ##### 
+# Model 4.1
+# mspe_pred_ridge <- predict(model4.1, s = best.lambda.ridge, newx = x_test)
+# MSPEmodel4.1 <- mean((mspe_pred_ridge - y_test)^2)
+##### ERRORS ##### 
+
+# Model 4.2
+mspe_pred_LASSO <- predict(model4.2, a = best.lambda.LASSO, newx = x_test)
+MSPEmodel4.2 <- mean((mspe_pred_LASSO - y_test)^2)
+
+cat("Model 3.1\n")
+cat("Internal: " , PRESSmodel3.1 / 256, "     External: ", MSPEmodel3.1, "\n")
+cat("Model 3.2\n")
+cat("Internal: " , PRESSmodel3.2 / 256, "     External: ", MSPEmodel3.2, "\n")
+cat("Model 3.3\n")
+cat("Internal: " , PRESSmodel3.3 / 256, "     External: ", MSPEmodel3.3, "\n")
+cat("Model 4.1\n")
+cat("Internal: " , PRESSmodel4.1 / 256, "     External: SEE ERROR DESCRIPTION BELOW\n")
+cat("Model 4.2\n")
+cat("Internal: " , PRESSmodel4.2 / 256, "     External: ", MSPEmodel4.2, "\n")
+```
+
+ERROR DESCRIPTION:
+- I faced challenged when calculating external validation (MSPE) on Model 4.1. I have left my commented out code in the model 4.1 section to see what I attempted. I ran into either (1) a variable number error, because my validation set did not contain all 135 predictors that model 4.1 is made with or (2) would generate a very very small number that did not seem to fit into the other MSPE calculations. I chose to exclude this statistic for the sake of argument towards my final model, but would love to know what I did wrong.
+
+**14. Based on both internal and external validation, which model you would choose as the final model? Fit the final model using the entire data set (training and validation combined) (Model 5). Write down the fitted regression function and report the R summary(). Give a complete interpretation of your model in terms of the real life context of the problem.**
+
+Based on my results from the internal and external validation, the final model selected is model 3.2. This is because it has the smallest MSPE, and therefore has the strongest prediction power on external data.  From model 5, I have concluded that stab.glu, age, and waist are the most significant predictors on Glycosolated Hemoglobin levels in African Americans, and therefore are great indicators for diabetes diagnosis. 
+
+```{r}
+# Entire dataset (transformed Y aka. all rows from validate + all rows from train)
+final_validate <- data.frame(validate[,])
+final_full <- rbind(final_validate,train[,])
+
+# Fit the final model using final data set
+model5 <- lm(YT ~ stab.glu + age + waist, data = final_full)
+summary(model5)
+```
