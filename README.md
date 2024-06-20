@@ -1,8 +1,5 @@
-# Project Description
-This project is to analyze a dataset, from start to finish, based on the multiple linear regression model. Students can discuss with each other to get a better understanding of the project, but submitted work must be done on an individual level.
-
 ## Data Description
-The data “diabetes.txt” contains 16 variables on 366 subjects who were interviewed in a study to understand the prevalence of obesity, diabetes, and other cardiovascular risk factors in central Virginia for African Americans. We will consider building regression models with glyhb as the response variable, as Glycosolated Hemoglobin levels greater than 70 is often taken as a positive diagnosis of diabetes. The goal is to find the “best” model for explaining the factors which are predictive of diabetes diagnosis.
+The data “diabetes.txt” contains 16 variables on 366 subjects who were interviewed in a study to understand the prevalence of obesity, diabetes, and other cardiovascular risk factors in central Virginia for African Americans. Build regression models with glyhb as the response variable, as Glycosolated Hemoglobin levels greater than 70 is often taken as a positive diagnosis of diabetes. The goal is to find the “best” model for explaining the factors which are predictive of diabetes diagnosis.
 
 ## Data Analysis
 ### Data exploration and data splitting
@@ -10,12 +7,12 @@ The data “diabetes.txt” contains 16 variables on 366 subjects who were inter
 
 2. Regress glybh on all predictor variables (Model 1). Draw the diagnostic plots of the model and comment.
 
-3. You want to check whether any transformation on the response variable is needed. You use the function ‘boxcox’ to help you make the decision. State the transformation you decide to use. In the following, we denote the transformed response variable to be glyhb∗. Regress glyhb∗ on all predictor variables (Model 2). Draw the diagnostic plots of this model and comment. Apply boxcox again on Model 2; what do you find?
+3. Check whether any transformation on the response variable is needed. You use the function ‘boxcox’ to help you make the decision. State the transformation you decide to use. In the following, we denote the transformed response variable to be glyhb∗. Regress glyhb∗ on all predictor variables (Model 2). Draw the diagnostic plots of this model and comment. Apply boxcox again on Model 2; what do you find?
 
 4. Set the seed to “372” and randomly split data into two parts: a training data set (70%) and a test data set (30%).
 
 ### Selection of first-order effects
-We now consider subsets selection from the pool of all first-order effects of the 15 predictors. glyhb* is used as the response variable for the following problems.
+Consider subsets selection from the pool of all first-order effects of the 15 predictors. glyhb* is used as the response variable for the following problems.
 
 5. Fit a model with all first-order effects (Model 3). How many regression coefficients are there in this model? What is the MSE from Model 3?
 
@@ -24,7 +21,7 @@ We now consider subsets selection from the pool of all first-order effects of th
 7. Denote the best models according to AIC, BIC, and adjusted R2 as Models 3.1, 3.2, and 3.3, respec- tively. Specify which predictors are included in each. It is possible that some of the three models are the same. We will examine these later on.
 
 ### Selection of first-order and interactions effects.
-We now consider subset selection from the pool of first-order effects and the 2-way interactions between the 15 predictors.
+Consider subset selection from the pool of first-order effects and the 2-way interactions between the 15 predictors.
 
 8. Fit a model with all first-order and 2-way interaction effects (Model 4). How many regression coeffi- cients are there in this model? What is the MSE from this model? Do you have any concern about the fit of this model? If yes, why?
 
@@ -35,8 +32,10 @@ We now consider subset selection from the pool of first-order effects and the 2-
 11. Discuss the difference in methodologies behind ridge and LASSO regression. Why do they result in such different models?
 
 ### Model validation.
-We now consider validation of the models (Model 3.1, Model 3.2, Model 3.3, Models 4.1, Models 4.2) you selected in the previous studies.
+Consider validation of the models (Model 3.1, Model 3.2, Model 3.3, Models 4.1, Models 4.2) you selected in the previous studies.
 
 12. Internal evaluation. We use PRESS for this purpose. Calculate PRESS for each of these models. Comment. (Note: you may have to write a function to carry out the LOOCV process in order to calculate PRESS for the ridge model.)
+    
 13. External evaluation using the test set. For each of these models (Model 3.1, Model 3.2, Model 3.3, Model 4.1, Model4.2), calculate the mean squared prediction error (MSPE), i.e., you use the model to predict the 110 observations in the test set and calculate the averaged squared prediction error. How do these MSPEs compare with the respective PRESS/n (here n is the sample size of the training data, i.e., 256). Which model has the smallest MSPE?
+  
 14. Based on both internal and external validation, which model you would choose as the final model? Fit the final model using the entire data set (training and validation combined) (Model 5). Write down the fitted regression function and report the R summary(). Give a complete interpretation of your model in terms of the real life context of the problem.
